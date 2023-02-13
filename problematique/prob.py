@@ -17,6 +17,7 @@ def main():
     # Get enveloppe using lowpass filter
     N = get_filter_order(np.pi/1000, sampleRate)
     enveloppe = apply_lowpass(N, frames)
+    enveloppe = np.divide(enveloppe, np.amax(enveloppe))    # Normalizing enveloppe
     
     # Apply Hamming window
     frames = hamming(frames)
@@ -24,12 +25,11 @@ def main():
     # Get information from frames
     harmonics, phases, fundamental = extract_frequencies(frames, sampleRate, harmonicsCount)
 
-
     if False:
-        synthesize_lad(harmonics, phases, fundamental, sampleRate)
+        synthesize_lad(harmonics, phases, fundamental, sampleRate, enveloppe)
 
-    if False:
-        synthesize_beethoven(harmonics, phases, sampleRate)
+    if True:
+        synthesize_beethoven(harmonics, phases, sampleRate, enveloppe)
 
 
 
@@ -80,12 +80,11 @@ def apply_lowpass(N, frames):
     return np.convolve(lowPass, np.abs(frames))
 
 
-def pad_thai(array, lenght):
-    if len(array) >= lenght:
-        return array
+def pad_thai(array, length):
+    return np.pad(array, (0, length - len(array)))
 
-    zeroes = np.zeros(lenght - len(array))
-    return array + zeroes
+def unpad_thai(array, length):
+    return array[0:length]
 
 
 def find_index_of_nearest(array, value):
@@ -115,7 +114,7 @@ def extract_frequencies(frames, sampleRate, harmonicsCount):
     return harmonics, phases, fundamental
     
 
-def create_audio(harmonics, phases, fundamental, sampleRate, duration_s = 2):
+def create_audio(harmonics, phases, fundamental, sampleRate, enveloppe, duration_s = 2):
     audio = []
     ts = np.linspace(0, duration_s , int(sampleRate * duration_s))
 
@@ -127,7 +126,10 @@ def create_audio(harmonics, phases, fundamental, sampleRate, duration_s = 2):
 
         audio.append(total)
 
-    return audio
+    # Apply enveloppe
+    new_env = unpad_thai(enveloppe, len(audio))
+    audio   = np.multiply(audio, new_env)
+    return audio.tolist()
 
 def create_silence(sampleRate, duration_s = 1):
     return [0 for t in np.linspace(0, duration_s , int(sampleRate * duration_s))]
@@ -144,21 +146,23 @@ def create_wav_from_audio(audio, sampleRate, filename):
             wav.writeframes(struct.pack('h', int(sample)))
 
 
-def synthesize_lad(harmonics, phases, fundamental, sampleRate):
+def synthesize_lad(harmonics, phases, fundamental, sampleRate, enveloppe):
     lad_audio = create_audio(harmonics, phases, fundamental, sampleRate, 2)
+    lad_audio = pad_thai(lad_audio, len(enveloppe))
+    lad_audio = np.multiply(lad_audio, enveloppe)
     create_wav_from_audio(lad_audio, sampleRate, "LA#.wav")
 
-def synthesize_beethoven(harmonics, phases, sampleRate):
+def synthesize_beethoven(harmonics, phases, sampleRate, enveloppe):
     sol_freq = 392.0
     mi_freq  = 329.6
     fa_freq  = 349.2
     re_freq  = 293.7
 
 
-    sol_audio = create_audio(harmonics, phases, sol_freq, sampleRate, 0.4)
-    mi_audio  = create_audio(harmonics, phases, mi_freq,  sampleRate, 1.5)
-    fa_audio  = create_audio(harmonics, phases, fa_freq,  sampleRate, 0.4)
-    re_audio  = create_audio(harmonics, phases, re_freq,  sampleRate, 1.5)
+    sol_audio = create_audio(harmonics, phases, sol_freq, sampleRate, enveloppe, 0.4)
+    mi_audio  = create_audio(harmonics, phases, mi_freq,  sampleRate, enveloppe, 1.5)
+    fa_audio  = create_audio(harmonics, phases, fa_freq,  sampleRate, enveloppe, 0.4)
+    re_audio  = create_audio(harmonics, phases, re_freq,  sampleRate, enveloppe, 1.5)
     silence_1 = create_silence(sampleRate, 0.2)
     silence_2 = create_silence(sampleRate, 1.5)
 
