@@ -26,7 +26,6 @@ def find_index_of_nearest(array, value):
     return (np.abs(array - value)).argmin()
 
     
-    
 
 # LA# intelligence
 lad_freq  = 466
@@ -35,6 +34,10 @@ max_freqs = 32
 # Read file
 lad_filename = "note_guitare_LAd.wav"
 sample_rate, frames = read_file(lad_filename)
+
+# Apply Hamming window
+hamming = np.hamming(len(frames))
+frames  = np.multiply(frames, hamming)
 
 # Extract frequencies
 data      = np.fft.fft(frames)
@@ -73,9 +76,9 @@ if False:
     plt.show()
 
 
-def create_sound_from_data(harmonics, phases, fundamental, sampleRate, filename, duration_s = 2):
+def create_audio(harmonics, phases, fundamental, sampleRate, duration_s = 2):
     audio = []
-    ts = np.linspace(0, duration_s , sampleRate * duration_s)
+    ts = np.linspace(0, duration_s , int(sampleRate * duration_s))
 
     audio = []
     for t in ts:
@@ -85,17 +88,49 @@ def create_sound_from_data(harmonics, phases, fundamental, sampleRate, filename,
 
         audio.append(total)
 
-    wav = wave.open(filename, "w")
-    nchannels = 1
-    sampwidth = 2
-    nframes   = len(audio)
-    wav.setparams((nchannels, sampwidth, sampleRate, nframes, "NONE", "not compressed"))
+    return audio
 
-    for sample in audio:
-        wav.writeframes(struct.pack('h', int(sample)))
+def create_silence(sampleRate, duration_s = 1):
+    return [0 for t in np.linspace(0, duration_s , int(sampleRate * duration_s))]
 
-    wav.close()
+
+def create_wav_from_audio(audio, sampleRate, filename):
+    with wave.open(filename, "w") as wav:
+        nchannels = 1
+        sampwidth = 2
+        nframes   = len(audio)
+        wav.setparams((nchannels, sampwidth, sampleRate, nframes, "NONE", "not compressed"))
+
+        for sample in audio:
+            wav.writeframes(struct.pack('h', int(sample)))
     
+if False:
+    lad_audio = create_audio(harmonics, phases, freqs[index_lad], sample_rate, 2)
+    create_wav_from_audio(lad_audio, sample_rate, "LA#.wav")
 
-create_sound_from_data(harmonics, phases, freqs[index_lad], sample_rate, "new_note.wav", 2)
+
+# Create Beethoven
+sol_freq = 392.0
+mi_freq  = 329.6
+fa_freq  = 349.2
+re_freq  = 293.7
+
+
+sol_audio = create_audio(harmonics, phases, sol_freq, sample_rate, 0.4)
+silence_1 = create_silence(sample_rate, 0.2)
+mi_audio  = create_audio(harmonics, phases, mi_freq,  sample_rate, 1.5)
+silence_2 = create_silence(sample_rate, 1.5)
+fa_audio  = create_audio(harmonics, phases, fa_freq,  sample_rate, 0.4)
+re_audio = create_audio(harmonics, phases, re_freq,  sample_rate, 1.5)
+
+beethoven = sol_audio + silence_1 + \
+            sol_audio + silence_1 + \
+            sol_audio + silence_1 + \
+            mi_audio  + silence_2 + \
+            fa_audio  + silence_1 + \
+            fa_audio  + silence_1 + \
+            fa_audio  + silence_1 + \
+            re_audio
+
+create_wav_from_audio(beethoven, sample_rate, "beethoven.wav")
 
