@@ -36,7 +36,7 @@ lad_filename = "note_guitare_LAd.wav"
 sample_rate, frames = read_file(lad_filename)
 
 # Apply Hamming window
-hamming = np.hamming(len(frames))
+hamming = np.hanning(len(frames))
 frames  = np.multiply(frames, hamming)
 
 # Extract frequencies
