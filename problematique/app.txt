@@ -1,0 +1,63 @@
+#filtre passebas
+omega = np.pi /1000
+#f = (𝜔̅ /2 )Fe 
+fe = sample_rate
+fc = (omega *fe )/ (2 * np.pi)
+#|H(𝜔̅)| = 1/N * ∑ e^(-j𝜔̅n)
+gain = np.power(10, -3/20)
+#gain = np.sqrt(2)/2
+err = []
+H0 = 1
+hGain = []
+for M in range(1,1000,1):
+    sum = 0
+    for i in range(0,M,1):
+        sum += (np.exp(-1j * 0 * i))
+    a = H0/sum.real
+    currentGain =  0
+    for k in range(0,M,1):
+        currentGain += (np.exp(-1j * omega * k))
+    hGain.append(np.abs(a * currentGain))
+N = find_index_of_nearest(hGain, gain) +1
+#avec sqrt(2)/2 on obtient 886 pour N et avec -3 db on on obtient 884 pour N nous allons prendre 884 pour N
+x = np.arange(0, np.pi, np.pi/5000)
+Hn = []	
+for w in x:
+    sumExp =0
+    for n in range(0,N,1):
+        sumExp += np.exp(-1j * w * n)
+    val =  sumExp/N
+    Hn.append(val)
+hn = np.fft.ifft(Hn)
+plt.plot(x, 20*np.log10(np.abs(Hn)))
+plt.show()
+plt.plot(x, hn)
+plt.show()
+
+#coupe bande
+#filtre coupe-bande
+N2=6000
+fc2 = 2000
+fcmin = 960
+fcmax = 1040
+fe2 = sample_rate_2
+#like labo
+mMin = (fcmin * N2) / fe2
+mMax = (fcmax * N2) / fe2
+# Creation de l'impulsion frequentielle du filtre
+Hn = [1 if n < mMin or n > mMax else 0 for n in range(0,N2,1)]
+
+# Reponse impulsionnelle du filtre
+hn = np.fft.ifft(Hn)
+x = np.arange(0, np.pi, np.pi/6000)
+#sin de 1000hz
+sin = np.sin(1000 * 2 * np.pi)
+result = np.convolve(sin, hn)
+plt.plot(range(N2), Hn)
+plt.xlim(100,200)
+plt.show()
+plt.stem(range(N2), hn)
+plt.xlim(0,200)
+plt.show()
+plt.plot( result)
+plt.show()
