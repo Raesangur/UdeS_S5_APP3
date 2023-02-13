@@ -5,6 +5,34 @@ import wave
 from scipy import signal
 
 
+def main():
+    # La#
+    lad_freq       = 466
+    harmonicsCount = 32
+
+    # Read file
+    lad_filename = "note_guitare_LAd.wav"
+    sampleRate, frames = read_file(lad_filename)
+
+    # Get enveloppe using lowpass filter
+    N = get_filter_order(np.pi/1000, sampleRate)
+    enveloppe = apply_lowpass(N, frames)
+    
+    # Apply Hamming window
+    frames = hamming(frames)
+
+    # Get information from frames
+    harmonics, phases, fundamental = extract_frequencies(frames, sampleRate, harmonicsCount)
+
+
+    if False:
+        synthesize_lad(harmonics, phases, fundamental, sampleRate)
+
+    if False:
+        synthesize_beethoven(harmonics, phases, sampleRate)
+
+
+
 # Reads the .wav file
 # Returns the sample_rate in Hz
 # Returns an array of samples, with amplitudes normalized at 1
@@ -21,60 +49,71 @@ def read_file(filename):
 
         return sample_rate, frames
 
+def get_filter_order(omega, sampleRate):
+    #filtre passebas
+    
+    #f = (𝜔̅ /2 )Fe 
+    fe = sampleRate
+    fc = (omega *fe )/ (2 * np.pi)
+    #|H(𝜔̅)| = 1/N * ∑ e^(-j𝜔̅n)
+    gain = np.power(10, -3/20)
+    #gain = np.sqrt(2)/2
+    
+    err = []
+    H0 = 1
+    hGain = []
+    for M in range(1,1000,1):
+        sum = 0
+        for i in range(0,M,1):
+            sum += (np.exp(-1j * 0 * i))
+        a = H0/sum.real
+        currentGain =  0
+        for k in range(0,M,1):
+            currentGain += (np.exp(-1j * omega * k))
+        hGain.append(np.abs(a * currentGain))
+    N = find_index_of_nearest(hGain, gain) +1
+    print(N)
+    return N
+
+def apply_lowpass(N, frames):
+    lowPass = [1/N for n in range(N)]
+    return np.convolve(lowPass, np.abs(frames))
+
+
+def pad_thai(array, lenght):
+    if len(array) >= lenght:
+        return array
+
+    zeroes = np.zeros(lenght - len(array))
+    return array + zeroes
+
 
 def find_index_of_nearest(array, value):
     return (np.abs(array - value)).argmin()
 
+def hamming(frames):
+    hamming = np.hamming(len(frames))
+    return np.multiply(frames, hamming)
+
+def extract_frequencies(frames, sampleRate, harmonicsCount):
+    # Extract frequencies
+    data      = np.fft.fft(frames)
+    freqs_raw = np.fft.fftfreq(len(data))
+    freqs     = freqs_raw * sampleRate
+    index_lad = np.argmax(abs(data))
+    fundamental = freqs[index_lad]
+    #print(index_lad)
+    #print(fundamental)
+
+    # Get amplitudes at harmonics
+    index_harms = [index_lad * i     for i in range (0, harmonicsCount - 1)]
+    harm_freqs  = [freqs[i]          for i in index_harms]
+    harmonics   = [np.abs(data[i])   for i in index_harms]
+    phases      = [np.angle(data[i]) for i in index_harms]
+
     
-
-# LA# intelligence
-lad_freq  = 466
-max_freqs = 32
-
-# Read file
-lad_filename = "note_guitare_LAd.wav"
-sample_rate, frames = read_file(lad_filename)
-
-# Apply Hamming window
-hamming = np.hanning(len(frames))
-frames  = np.multiply(frames, hamming)
-
-# Extract frequencies
-data      = np.fft.fft(frames)
-freqs_raw = np.fft.fftfreq(len(data))
-freqs     = freqs_raw * sample_rate
-index_lad = np.argmax(abs(data))
-print(index_lad)
-print(freqs[index_lad])
-
-#nxt = find_next_index(data, index_lad, index_lad)
-#print(nxt)
-#exit()
-
-if False:
-    amplitudes = np.abs(data)
-    amplitudes = np.divide(amplitudes, np.amax(amplitudes))
-    # phases     = np.angle(data)
-
-    plt.stem(freqs, amplitudes)
-    plt.yscale("log")
-    plt.xlim(0, 20000)
-    plt.show()
-
-
-# Get amplitudes at harmonics
-index_harms = [index_lad * i     for i in range (0, max_freqs - 1)]
-harm_freqs  = [freqs[i]          for i in index_harms]
-harmonics   = [np.abs(data[i])   for i in index_harms]
-phases      = [np.angle(data[i]) for i in index_harms]
-
-if False:
-    print(harmonics)
-    plt.stem(harm_freqs[1::], harmonics[1::])
-    plt.yscale("log")
-    plt.xlim(0, lad_freq * max_freqs)
-    plt.show()
-
+    return harmonics, phases, fundamental
+    
 
 def create_audio(harmonics, phases, fundamental, sampleRate, duration_s = 2):
     audio = []
@@ -103,34 +142,38 @@ def create_wav_from_audio(audio, sampleRate, filename):
 
         for sample in audio:
             wav.writeframes(struct.pack('h', int(sample)))
-    
-if False:
-    lad_audio = create_audio(harmonics, phases, freqs[index_lad], sample_rate, 2)
-    create_wav_from_audio(lad_audio, sample_rate, "LA#.wav")
 
 
-# Create Beethoven
-sol_freq = 392.0
-mi_freq  = 329.6
-fa_freq  = 349.2
-re_freq  = 293.7
+def synthesize_lad(harmonics, phases, fundamental, sampleRate):
+    lad_audio = create_audio(harmonics, phases, fundamental, sampleRate, 2)
+    create_wav_from_audio(lad_audio, sampleRate, "LA#.wav")
+
+def synthesize_beethoven(harmonics, phases, sampleRate):
+    sol_freq = 392.0
+    mi_freq  = 329.6
+    fa_freq  = 349.2
+    re_freq  = 293.7
 
 
-sol_audio = create_audio(harmonics, phases, sol_freq, sample_rate, 0.4)
-silence_1 = create_silence(sample_rate, 0.2)
-mi_audio  = create_audio(harmonics, phases, mi_freq,  sample_rate, 1.5)
-silence_2 = create_silence(sample_rate, 1.5)
-fa_audio  = create_audio(harmonics, phases, fa_freq,  sample_rate, 0.4)
-re_audio = create_audio(harmonics, phases, re_freq,  sample_rate, 1.5)
+    sol_audio = create_audio(harmonics, phases, sol_freq, sampleRate, 0.4)
+    mi_audio  = create_audio(harmonics, phases, mi_freq,  sampleRate, 1.5)
+    fa_audio  = create_audio(harmonics, phases, fa_freq,  sampleRate, 0.4)
+    re_audio  = create_audio(harmonics, phases, re_freq,  sampleRate, 1.5)
+    silence_1 = create_silence(sampleRate, 0.2)
+    silence_2 = create_silence(sampleRate, 1.5)
 
-beethoven = sol_audio + silence_1 + \
-            sol_audio + silence_1 + \
-            sol_audio + silence_1 + \
-            mi_audio  + silence_2 + \
-            fa_audio  + silence_1 + \
-            fa_audio  + silence_1 + \
-            fa_audio  + silence_1 + \
-            re_audio
+    beethoven = sol_audio + silence_1 + \
+                sol_audio + silence_1 + \
+                sol_audio + silence_1 + \
+                mi_audio  + silence_2 + \
+                fa_audio  + silence_1 + \
+                fa_audio  + silence_1 + \
+                fa_audio  + silence_1 + \
+                re_audio
 
-create_wav_from_audio(beethoven, sample_rate, "beethoven.wav")
+    create_wav_from_audio(beethoven, sampleRate, "beethoven.wav")
 
+
+
+if __name__ == "__main__":
+    main()
