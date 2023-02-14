@@ -4,7 +4,6 @@ import struct
 import wave
 from scipy import signal
 
-
 def main():
     # La#
     lad_freq       = 466
@@ -18,6 +17,8 @@ def main():
     N = get_filter_order(np.pi/1000, sampleRate)
     enveloppe = apply_lowpass(N, frames)
     enveloppe = np.divide(enveloppe, np.amax(enveloppe))    # Normalizing enveloppe
+    plt.plot(enveloppe)
+    plt.show()
     
     # Apply Hamming window
     frames = hamming(frames)
@@ -28,7 +29,7 @@ def main():
     # Get note frequencies
     note_freqs = generate_note_frequencies(fundamental)     # Generate all the other notes from LA#
 
-    if False:
+    if True:
         synthesize_lad(harmonics, phases, fundamental, sampleRate, enveloppe)
 
     if True:
@@ -75,11 +76,12 @@ def get_filter_order(omega, sampleRate):
             currentGain += (np.exp(-1j * omega * k))
         hGain.append(np.abs(a * currentGain))
     N = find_index_of_nearest(hGain, gain) +1
-    # print(N)
+    print("Lowpass Filter Order: " + str(N))
     return N
 
 def apply_lowpass(N, frames):
     lowPass = [1/N for n in range(N)]
+	
     return np.convolve(lowPass, np.abs(frames))
 
 
@@ -97,23 +99,41 @@ def hamming(frames):
     hamming = np.hamming(len(frames))
     return np.multiply(frames, hamming)
 
+
+def display_frequencies(harmonics, phases, fftData, frames):
+	fig, (frams, fft, harm, phas)  = plt.subplots(4)
+	
+	frams.plot(frames)
+	#frams.set_xlim(0, 20000)
+	fft.stem(fftData)
+	fft.set_xlim(0, 20000)
+	fft.set_yscale("log")
+	harm.stem(harmonics)
+	harm.set_yscale("log")
+	phas.stem(phases)
+	
+	plt.show()
+
 def extract_frequencies(frames, sampleRate, harmonicsCount):
     # Extract frequencies
     data      = np.fft.fft(frames)
     freqs_raw = np.fft.fftfreq(len(data))
     freqs     = freqs_raw * sampleRate
+	
     index_lad = np.argmax(abs(data))
     fundamental = freqs[index_lad]
     #print(index_lad)
-    #print(fundamental)
+    print("La# fundamental frequency: " + str(fundamental))
+	
 
     # Get amplitudes at harmonics
-    index_harms = [index_lad * i     for i in range (0, harmonicsCount - 1)]
+    index_harms = [index_lad * i     for i in range (0, harmonicsCount + 1)]
     harm_freqs  = [freqs[i]          for i in index_harms]
     harmonics   = [np.abs(data[i])   for i in index_harms]
     phases      = [np.angle(data[i]) for i in index_harms]
 
-    
+    # display_frequencies(harmonics, phases, data, frames)
+	
     return harmonics, phases, fundamental
     
 
@@ -130,8 +150,9 @@ def create_audio(harmonics, phases, fundamental, sampleRate, enveloppe, duration
         audio.append(total)
 
     # Apply enveloppe
-    new_env = unpad_thai(enveloppe, len(audio))
-    audio   = np.multiply(audio, new_env)
+    new_env   = unpad_thai(enveloppe, len(audio))
+    new_audio = pad_thai(audio, len(new_env))
+    audio     = np.multiply(audio, new_env)
 
     # Apply second window
     # Apply Hamming window
@@ -173,9 +194,10 @@ def generate_note_frequencies(lad_freq):
     return frequencies
 
 def synthesize_lad(harmonics, phases, fundamental, sampleRate, enveloppe):
-    lad_audio = create_audio(harmonics, phases, fundamental, sampleRate, 2)
-    lad_audio = pad_thai(lad_audio, len(enveloppe))
-    lad_audio = np.multiply(lad_audio, enveloppe)
+    lad_audio = create_audio(harmonics, phases, fundamental, sampleRate, enveloppe, 2)
+	
+    # extract_frequencies(lad_audio, sampleRate, 32)
+	
     create_wav_from_audio(lad_audio, sampleRate, "LA#.wav")
 
 def synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs):
