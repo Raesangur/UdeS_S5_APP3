@@ -1,40 +1,42 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import struct
 import wave
 from scipy import signal
 
-
-def main():
-    # La#
-    lad_freq       = 466
+def main(filename="note_guitare_LAd.wav", audio=None, audioSampleRate=0):
     harmonicsCount = 32
 
     # Read file
-    lad_filename = "note_guitare_LAd.wav"
-    sampleRate, frames = read_file(lad_filename)
+    if filename != None:
+        sampleRate, frames = read_file(filename)
+    else
+        frames = audio
+        sampleRate = audioSampleRate
 
     # Get enveloppe using lowpass filter
     N = get_filter_order(np.pi/1000, sampleRate)
     enveloppe = apply_lowpass(N, frames)
     enveloppe = np.divide(enveloppe, np.amax(enveloppe))    # Normalizing enveloppe
-    
+    display_enveloppe(enveloppe)
+
     # Apply Hamming window
     frames = hamming(frames)
 
     # Get information from frames
-    harmonics, phases, fundamental = extract_frequencies(frames, sampleRate, harmonicsCount)
+    harmonics, phases, fundamental = extract_frequencies(frames, sampleRate, harmonicsCount, displayFreqs=True)
+    plt.show()
 
     # Get note frequencies
     note_freqs = generate_note_frequencies(fundamental)     # Generate all the other notes from LA#
 
-    if False:
-        synthesize_lad(harmonics, phases, fundamental, sampleRate, enveloppe)
 
-    if True:
-        synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs)
+    synthesize_note(harmonics, phases, fundamental, sampleRate, enveloppe, "La#.wav")
+    synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs)
 
-
+def basson(filename):
+    
 
 # Reads the .wav file
 # Returns the sample_rate in Hz
@@ -75,13 +77,14 @@ def get_filter_order(omega, sampleRate):
             currentGain += (np.exp(-1j * omega * k))
         hGain.append(np.abs(a * currentGain))
     N = find_index_of_nearest(hGain, gain) +1
-    # print(N)
+
+    print("Lowpass Filter Order: " + str(N))
     return N
 
 def apply_lowpass(N, frames):
     lowPass = [1/N for n in range(N)]
+    
     return np.convolve(lowPass, np.abs(frames))
-
 
 def pad_thai(array, length):
     return np.pad(array, (0, length - len(array)))
@@ -93,26 +96,82 @@ def unpad_thai(array, length):
 def find_index_of_nearest(array, value):
     return (np.abs(array - value)).argmin()
 
+# Apply a hamming window and renormalize to 1
 def hamming(frames):
     hamming = np.hamming(len(frames))
-    return np.multiply(frames, hamming)
+    frame   = np.multiply(frames, hamming)
+    return np.divide(frames, np.amax(frames))
 
-def extract_frequencies(frames, sampleRate, harmonicsCount):
+def display_enveloppe(enveloppe):
+    fig, ax = plt.subplots(1)
+
+    ax.plot(enveloppe)
+    ax.set_title("Enveloppe du signal initial")
+    ax.set_xlabel("Échantillons")
+    ax.set_ylabel("Amplitude")
+
+
+def display_frequencies(harmonics, phases, fftData, frames, fundamental):
+    fig, (frams, fft) = plt.subplots(2)
+    fig, (harm, phas) = plt.subplots(2)
+    
+    frams.plot(frames)
+    # frams.set_xlim(0, 140000)
+    frams.set_title("Échantillons audios initiaux")
+    frams.set_xlabel("Échantillons")
+    frams.set_ylabel("Amplitude (normalisée à 1)")
+
+    fft.stem(fftData)
+    fft.set_xlim(0, len(fftData) // 2)
+    fft.set_yscale("log")
+    fft.set_title("FFT du signal")
+    fft.set_xlabel("Échantillons fréquentiels")
+    fft.set_ylabel("Amplitude")
+
+    harmFreqs = [i * fundamental for i in range(0, len(harmonics))]
+    harm.stem(harmFreqs, harmonics)
+    harm.set_yscale("log")
+    harm.set_title("Amplitude des harmoniques")
+    harm.set_xlabel("Fréquence (Hz)")
+    harm.set_ylabel("Amplitude")
+    phas.stem(harmFreqs, phases)
+    phas.set_title("Phase des harmoniques")
+    phas.set_xlabel("Fréquence (Hz)")
+    phas.set_ylabel("Amplitude")
+
+    fig, ax = plt.subplots()
+    ax.xaxis.set_visible(False)
+    ax.yaxis.set_visible(False)
+    ax.axis("tight")
+    cellText = []
+    for i in range(len(harmonics)):
+        cellText.append([harmFreqs[i], harmonics[i], phases[i]])
+    table = ax.table(cellText = cellText, colLabels = ["Fréquence (Hz)", "Amplitude", "Phase"], loc="center")
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 0.5)
+
+
+def extract_frequencies(frames, sampleRate, harmonicsCount, displayFreqs = False):
     # Extract frequencies
     data      = np.fft.fft(frames)
     freqs_raw = np.fft.fftfreq(len(data))
     freqs     = freqs_raw * sampleRate
+    
     index_lad = np.argmax(abs(data))
     fundamental = freqs[index_lad]
     #print(index_lad)
-    #print(fundamental)
+    print("La# fundamental frequency: " + str(fundamental))
+    
 
     # Get amplitudes at harmonics
-    index_harms = [index_lad * i     for i in range (0, harmonicsCount - 1)]
+    index_harms = [index_lad * i     for i in range (0, harmonicsCount + 1)]
     harm_freqs  = [freqs[i]          for i in index_harms]
     harmonics   = [np.abs(data[i])   for i in index_harms]
     phases      = [np.angle(data[i]) for i in index_harms]
 
+    if displayFreqs == True:
+        display_frequencies(harmonics, phases, data, frames, fundamental)
     
     return harmonics, phases, fundamental
     
@@ -130,12 +189,13 @@ def create_audio(harmonics, phases, fundamental, sampleRate, enveloppe, duration
         audio.append(total)
 
     # Apply enveloppe
-    new_env = unpad_thai(enveloppe, len(audio))
-    audio   = np.multiply(audio, new_env)
+    new_env   = unpad_thai(enveloppe, len(audio))
+    new_audio = pad_thai(audio, len(new_env))
+    audio     = np.multiply(audio, new_env)
 
     # Apply second window
     # Apply Hamming window
-    audio = hamming(audio)
+    # audio = hamming(audio)
     return audio.tolist()
 
 def create_silence(sampleRate, duration_s = 1):
@@ -172,11 +232,13 @@ def generate_note_frequencies(lad_freq):
 
     return frequencies
 
-def synthesize_lad(harmonics, phases, fundamental, sampleRate, enveloppe):
-    lad_audio = create_audio(harmonics, phases, fundamental, sampleRate, 2)
-    lad_audio = pad_thai(lad_audio, len(enveloppe))
-    lad_audio = np.multiply(lad_audio, enveloppe)
-    create_wav_from_audio(lad_audio, sampleRate, "LA#.wav")
+def synthesize_note(harmonics, phases, fundamental, sampleRate, enveloppe, name):
+    note_audio = create_audio(harmonics, phases, fundamental, sampleRate, enveloppe, 2)
+    
+    # extract_frequencies(lad_audio, sampleRate, 32)
+    
+    create_wav_from_audio(lad_audio, sampleRate, name)
+
 
 def synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs):
     sol_audio  = create_audio(harmonics, phases, note_freqs["sol"], sampleRate, enveloppe, 0.4)
@@ -200,4 +262,7 @@ def synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs):
 
 
 if __name__ == "__main__":
-    main()
+    main("note_guitare_LAd.wav")
+
+    bassonAudio, bassonSampleRate = basson("note_basson_plus_sinus_1000_Hz.wav")
+    main(None, basson_audio, bassonSampleRate)
