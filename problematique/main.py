@@ -5,13 +5,13 @@ import struct
 import wave
 from scipy import signal
 
-def main(filename="note_guitare_LAd.wav", audio=None, audioSampleRate=0):
+def main(filename="note_guitare_LAd.wav", newFile="La#.wav", audio=None, audioSampleRate=0):
     harmonicsCount = 32
 
     # Read file
     if filename != None:
         sampleRate, frames = read_file(filename)
-    else
+    else:
         frames = audio
         sampleRate = audioSampleRate
 
@@ -26,17 +26,62 @@ def main(filename="note_guitare_LAd.wav", audio=None, audioSampleRate=0):
 
     # Get information from frames
     harmonics, phases, fundamental = extract_frequencies(frames, sampleRate, harmonicsCount, displayFreqs=True)
-    plt.show()
 
     # Get note frequencies
     note_freqs = generate_note_frequencies(fundamental)     # Generate all the other notes from LA#
 
 
-    synthesize_note(harmonics, phases, fundamental, sampleRate, enveloppe, "La#.wav")
-    synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs)
+    synthesize_note(harmonics, phases, fundamental, sampleRate, enveloppe, newFile)
 
-def basson(filename):
-    
+    if filename != None:
+        synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs)
+
+def basson(filename, newFile, display=False):
+    sampleRate, frames = read_file(filename)
+
+    hnBasson = get_bandstop_filter(frames, sampleRate, display)
+    fftBassonOrig = np.fft.fft(frames)
+    bassonOri_freqs = np.fft.fftfreq(len(frames), d=1/sampleRate)
+
+    # Convolution
+    result = np.convolve(frames, hnBasson)
+
+    # FFT of filtered audio
+    fftBassonFiltre = np.fft.fft(result)
+    bassonFin_freqs = np.fft.fftfreq(len(result), d=1/sampleRate)
+
+    # Applying Hamming window
+    fenetre = np.hamming(len(result)) * result
+
+    create_wav_from_audio(fenetre, sampleRate, newFile)
+
+    if display == True:
+        fig, ax = plt.subplots(1)
+        ax.plot(bassonOri_freqs, 20 * np.log10(np.abs(fftBassonOrig)))
+        ax.set_xlim(0,1500)
+        ax.set_title("Spectres de fourier avant filtrage")
+        ax.set_xlabel("fréquence (Hz)")
+        ax.set_ylabel("Amplitude (dB)")
+
+        fig, (amp, spec) = plt.subplots(2)
+        amp.plot(result)
+        amp.set_title("Amplitude après filtrage")
+        amp.set_xlabel("Échantillons")
+        amp.set_ylabel("Amplitude")
+
+        spec.plot(bassonFin_freqs, 20*np.log10(np.abs(fftBassonFiltre)))
+        spec.set_xlim(0,1500)
+        spec.set_title("Spectre de fourier après filtrage")
+        spec.set_xlabel("fréquence (Hz)")
+        spec.set_ylabel("Amplitude (dB)")
+
+        fig, fen = plt.subplots(1)
+        fen.plot(fenetre)
+        fen.set_title("Amplitude après fenêtre")
+        fen.set_xlabel("Échantillons")
+        fen.set_ylabel("Amplitude")
+
+    return fenetre, sampleRate
 
 # Reads the .wav file
 # Returns the sample_rate in Hz
@@ -80,6 +125,80 @@ def get_filter_order(omega, sampleRate):
 
     print("Lowpass Filter Order: " + str(N))
     return N
+
+def get_bandstop_filter(frames, sampleRate, displayFilter=False):
+    N2=6000
+    fe2 = sampleRate
+    fc1 = 1000
+    fc2 = 40
+
+    # Get h(n) of lowpass filter
+    w0 = (2 * np.pi * fc1) / fe2
+    w1 = (2 * np.pi * fc2) / fe2
+    m2 = (fc2 * N2) / fe2
+    k2 = (2 * m2) +1
+    data = np.linspace(-(N2/2) + 1, N2/2, N2)
+    dn=[1 if data[i] == 0 else 0 for i in range(0,N2,1)]
+    hLp = []
+    for el in data:
+          if el == 0:
+            dn.append(1)
+            hLp.append(k2/N2)
+          else:
+            dn.append(0)
+            hLp.append((np.sin((np.pi * el * k2) / N2) / np.sin((np.pi * el) / N2))/N2)
+
+    # Generate h(n) function
+    hnBasson = [dn[i] - np.multiply(2 * hLp[i] , np.cos(w0 * data[i])) for i in range(0,N2,1)]
+
+    # Generate H(n) function (frequency response)
+    HnBasson = np.fft.fft(hnBasson)
+    cb_freqs = np.fft.fftfreq(len(hnBasson),d=1/fe2)
+
+    # Test with a 1000Hz sinus
+    sin = np.sin(1000 * 2 * np.pi)
+    resultSin = np.convolve(sin, hnBasson)
+
+    w, amp = signal.freqz(hnBasson)
+    angles = np.unwrap(np.angle(amp))
+
+    if displayFilter == True:
+        fig, (hlp, hn) = plt.subplots(2)
+        hlp.plot(data,np.abs(hLp))
+        hlp.set_title("Filtre passe-bas avec la technique de la fenêtrage 40 hz pour obtenir un filtre coupe-bande")
+        hlp.set_xlabel("Échantillon")
+        hlp.set_ylabel("Amplitude")
+
+        hn.plot(data,hnBasson)
+        hn.set_title("Réponse impulsionnelle du filtre coupe-bande")
+        hn.set_xlabel("Échantillon")
+        hn.set_ylabel("Amplitude")
+
+        fig, rsin = plt.subplots(1)
+        rsin.plot(resultSin)
+        rsin.set_title("Test avec une sinus de 1000Hz")
+        rsin.set_xlabel("Échantillon")
+        rsin.set_ylabel("Amplitude")
+
+        fig, (vis, rep) = plt.subplots(2)
+        vis.plot(cb_freqs[:500],20*np.log10(np.abs(HnBasson[:500])))
+        vis.set_title("Visualisation de la fréquence de coupure")
+        vis.set_xlabel("Fréquence (Hz)")
+        vis.set_ylabel("Amplitude (dB)")
+
+        rep.plot(w,20*np.log10(np.abs(amp)))
+        rep.set_title('Réponse en fréquence du filtre coupe-bande')
+        rep.set_ylabel('Amplitude [dB]', color='b')
+        rep.set_xlabel('Fréquence normalisé [rad/échantillon]')
+
+        ax2 = rep.twinx()
+        ax2.plot(w, angles, 'g-')
+        ax2.set_ylabel('Phase (rad)', color='g')
+        ax2.grid(True)
+        ax2.axis('tight')
+
+    return hnBasson
+
 
 def apply_lowpass(N, frames):
     lowPass = [1/N for n in range(N)]
@@ -235,9 +354,9 @@ def generate_note_frequencies(lad_freq):
 def synthesize_note(harmonics, phases, fundamental, sampleRate, enveloppe, name):
     note_audio = create_audio(harmonics, phases, fundamental, sampleRate, enveloppe, 2)
     
-    # extract_frequencies(lad_audio, sampleRate, 32)
+    # extract_frequencies(note_audio, sampleRate, 32)
     
-    create_wav_from_audio(lad_audio, sampleRate, name)
+    create_wav_from_audio(note_audio, sampleRate, name)
 
 
 def synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs):
@@ -262,7 +381,9 @@ def synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs):
 
 
 if __name__ == "__main__":
-    main("note_guitare_LAd.wav")
+    main("note_guitare_LAd.wav", "La#.wav")
 
-    bassonAudio, bassonSampleRate = basson("note_basson_plus_sinus_1000_Hz.wav")
-    main(None, basson_audio, bassonSampleRate)
+    basson_audio, bassonSampleRate = basson("note_basson_plus_sinus_1000_Hz.wav", "basson_filtered.wav", True)
+    main(None, "new_basson.wav", basson_audio, bassonSampleRate)
+
+    plt.show()
