@@ -25,11 +25,14 @@ def main():
     # Get information from frames
     harmonics, phases, fundamental = extract_frequencies(frames, sampleRate, harmonicsCount)
 
+    # Get note frequencies
+    note_freqs = generate_note_frequencies(fundamental)     # Generate all the other notes from LA#
+
     if False:
         synthesize_lad(harmonics, phases, fundamental, sampleRate, enveloppe)
 
     if True:
-        synthesize_beethoven(harmonics, phases, sampleRate, enveloppe)
+        synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs)
 
 
 
@@ -72,7 +75,7 @@ def get_filter_order(omega, sampleRate):
             currentGain += (np.exp(-1j * omega * k))
         hGain.append(np.abs(a * currentGain))
     N = find_index_of_nearest(hGain, gain) +1
-    print(N)
+    # print(N)
     return N
 
 def apply_lowpass(N, frames):
@@ -129,6 +132,10 @@ def create_audio(harmonics, phases, fundamental, sampleRate, enveloppe, duration
     # Apply enveloppe
     new_env = unpad_thai(enveloppe, len(audio))
     audio   = np.multiply(audio, new_env)
+
+    # Apply second window
+    # Apply Hamming window
+    audio = hamming(audio)
     return audio.tolist()
 
 def create_silence(sampleRate, duration_s = 1):
@@ -145,6 +152,25 @@ def create_wav_from_audio(audio, sampleRate, filename):
         for sample in audio:
             wav.writeframes(struct.pack('h', int(sample)))
 
+def generate_note_frequencies(lad_freq):
+    la_freq = lad_freq / 1.06
+
+    frequencies = {
+        "do"   : la_freq * 0.595,
+        "do#"  : la_freq * 0.630,
+        "ré"   : la_freq * 0.667,
+        "ré#"  : la_freq * 0.707,
+        "mi"   : la_freq * 0.749,
+        "fa"   : la_freq * 0.794,
+        "fa#"  : la_freq * 0.841,
+        "sol"  : la_freq * 0.891,
+        "sol#" : la_freq * 0.944,
+        "la"   : la_freq,
+        "la#"  : lad_freq,
+        "si"   : la_freq * 1.123
+    }
+
+    return frequencies
 
 def synthesize_lad(harmonics, phases, fundamental, sampleRate, enveloppe):
     lad_audio = create_audio(harmonics, phases, fundamental, sampleRate, 2)
@@ -152,24 +178,18 @@ def synthesize_lad(harmonics, phases, fundamental, sampleRate, enveloppe):
     lad_audio = np.multiply(lad_audio, enveloppe)
     create_wav_from_audio(lad_audio, sampleRate, "LA#.wav")
 
-def synthesize_beethoven(harmonics, phases, sampleRate, enveloppe):
-    sol_freq = 392.0
-    mi_freq  = 329.6
-    fa_freq  = 349.2
-    re_freq  = 293.7
-
-
-    sol_audio = create_audio(harmonics, phases, sol_freq, sampleRate, enveloppe, 0.4)
-    mi_audio  = create_audio(harmonics, phases, mi_freq,  sampleRate, enveloppe, 1.5)
-    fa_audio  = create_audio(harmonics, phases, fa_freq,  sampleRate, enveloppe, 0.4)
-    re_audio  = create_audio(harmonics, phases, re_freq,  sampleRate, enveloppe, 1.5)
-    silence_1 = create_silence(sampleRate, 0.2)
-    silence_2 = create_silence(sampleRate, 1.5)
+def synthesize_beethoven(harmonics, phases, sampleRate, enveloppe, note_freqs):
+    sol_audio  = create_audio(harmonics, phases, note_freqs["sol"], sampleRate, enveloppe, 0.4)
+    mib_audio  = create_audio(harmonics, phases, note_freqs["ré#"], sampleRate, enveloppe, 1.5)
+    fa_audio   = create_audio(harmonics, phases, note_freqs["fa"],  sampleRate, enveloppe, 0.4)
+    re_audio   = create_audio(harmonics, phases, note_freqs["ré"],  sampleRate, enveloppe, 1.5)
+    silence_1  = create_silence(sampleRate, 0.2)
+    silence_2  = create_silence(sampleRate, 1.5)
 
     beethoven = sol_audio + silence_1 + \
                 sol_audio + silence_1 + \
                 sol_audio + silence_1 + \
-                mi_audio  + silence_2 + \
+                mib_audio + silence_2 + \
                 fa_audio  + silence_1 + \
                 fa_audio  + silence_1 + \
                 fa_audio  + silence_1 + \
