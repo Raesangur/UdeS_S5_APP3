@@ -17,8 +17,6 @@ def main():
     N = get_filter_order(np.pi/1000, sampleRate)
     enveloppe = apply_lowpass(N, frames)
     enveloppe = np.divide(enveloppe, np.amax(enveloppe))    # Normalizing enveloppe
-    plt.plot(enveloppe)
-    plt.show()
     
     # Apply Hamming window
     frames = hamming(frames)
@@ -145,7 +143,7 @@ def create_audio(harmonics, phases, fundamental, sampleRate, enveloppe, duration
     for t in ts:
         total = 0;
         for i in range(len(harmonics)):
-            total += harmonics[i] * np.sin(2 * np.pi * fundamental * i * t + phases[i])
+            total += 10 * harmonics[i] * np.sin(2 * np.pi * fundamental * i * t + phases[i])
 
         audio.append(total)
 
@@ -156,7 +154,7 @@ def create_audio(harmonics, phases, fundamental, sampleRate, enveloppe, duration
 
     # Apply second window
     # Apply Hamming window
-    audio = hamming(audio)
+    # audio = hamming(audio)
     return audio.tolist()
 
 def create_silence(sampleRate, duration_s = 1):
